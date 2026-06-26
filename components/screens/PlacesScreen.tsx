@@ -1,13 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import CategoryFilter, {
   type CategoryFilterValue,
 } from "@/components/CategoryFilter";
 import PlaceCard from "@/components/PlaceCard";
 import SourceFilter, { type SourceFilterValue } from "@/components/SourceFilter";
+import { places } from "@/data/places";
 import { useCurrentLocation } from "@/hooks/useCurrentLocation";
 import { useFavorites } from "@/hooks/useFavorites";
+import { mergePlaces, useImportedPlaces } from "@/hooks/useImportedPlaces";
 import type { Place } from "@/types/place";
 import { calculateDistanceKm } from "@/utils/distance";
 
@@ -31,7 +33,12 @@ function matchesSearch(place: Place, searchQuery: string) {
 }
 
 export default function PlacesScreen() {
-  const { placesWithFavorites, toggleFavorite } = useFavorites();
+  const { importedPlaces } = useImportedPlaces();
+  const allPlaces = useMemo(
+    () => mergePlaces(places, importedPlaces),
+    [importedPlaces],
+  );
+  const { placesWithFavorites, toggleFavorite } = useFavorites(allPlaces);
   const [selectedCategory, setSelectedCategory] =
     useState<CategoryFilterValue>("all");
   const [selectedSource, setSelectedSource] =

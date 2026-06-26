@@ -1,10 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import PlaceDetailModal from "@/components/PlaceDetailModal";
 import { sampleItinerary } from "@/data/itinerary";
+import { places } from "@/data/places";
 import { useCurrentLocation } from "@/hooks/useCurrentLocation";
 import { useFavorites } from "@/hooks/useFavorites";
+import { mergePlaces, useImportedPlaces } from "@/hooks/useImportedPlaces";
 import { useItinerary } from "@/hooks/useItinerary";
 import { useTravelSettings } from "@/hooks/useTravelSettings";
 import { recommendNextActions } from "@/lib/recommendationEngine";
@@ -89,7 +91,12 @@ export default function HomeScreen() {
   const [addingPlaceId, setAddingPlaceId] = useState<string | null>(null);
   const [addedPlaceId, setAddedPlaceId] = useState<string | null>(null);
   const { travel } = useTravelSettings();
-  const { placesWithFavorites, toggleFavorite } = useFavorites();
+  const { importedPlaces } = useImportedPlaces();
+  const allPlaces = useMemo(
+    () => mergePlaces(places, importedPlaces),
+    [importedPlaces],
+  );
+  const { placesWithFavorites, toggleFavorite } = useFavorites(allPlaces);
   const { itinerary, addPlaceToDay } = useItinerary();
   const { location, isLoading, error, refreshLocation } = useCurrentLocation();
   const currentLocationLabel = location

@@ -2,8 +2,10 @@
 
 import { useMemo, useState } from "react";
 import PlaceDetailModal from "@/components/PlaceDetailModal";
+import { places } from "@/data/places";
 import { useCurrentLocation } from "@/hooks/useCurrentLocation";
 import { useFavorites } from "@/hooks/useFavorites";
+import { mergePlaces, useImportedPlaces } from "@/hooks/useImportedPlaces";
 import { recommendNextActions } from "@/lib/recommendationEngine";
 import type { Place, PlaceCategory, PlaceSource } from "@/types/place";
 import type { RecommendationContext } from "@/types/recommendation";
@@ -93,7 +95,12 @@ export default function NearbyScreen() {
     useState<NearbyCategoryId>("food");
   const [selectedPlace, setSelectedPlace] = useState<NearbyPlace | null>(null);
   const { location, isLoading, error, refreshLocation } = useCurrentLocation();
-  const { placesWithFavorites, toggleFavorite } = useFavorites();
+  const { importedPlaces } = useImportedPlaces();
+  const allPlaces = useMemo(
+    () => mergePlaces(places, importedPlaces),
+    [importedPlaces],
+  );
+  const { placesWithFavorites, toggleFavorite } = useFavorites(allPlaces);
 
   const selectedCategory = categoryButtons.find(
     (category) => category.id === selectedCategoryId,
