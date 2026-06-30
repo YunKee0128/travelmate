@@ -7,7 +7,7 @@ import {
   type ImportedPlaceDetailsUpdate,
   type SaveImportedPlacesResult,
 } from "@/hooks/useImportedPlaces";
-import { parseGoogleMapsPlaces } from "@/lib/googleMapsImport";
+import { parseGoogleMapsPlacesWithReport } from "@/lib/googleMapsImport";
 import type { Place, PlaceCategory } from "@/types/place";
 
 type ImportScreenProps = {
@@ -27,22 +27,26 @@ type EditablePlaceDetails = {
   recommendedTime: string;
 };
 
-const importSteps = [
-  {
-    title: "1. JSON 준비",
-    description:
-      "Google Maps Takeout 또는 직접 정리한 장소 JSON을 준비합니다.",
-  },
-  {
-    title: "2. 브라우저에서 미리보기",
-    description:
-      "아직 Google OAuth/API 없이 붙여넣거나 업로드한 JSON만 TravelMate 형식으로 변환합니다.",
-  },
-  {
-    title: "3. 저장 후 직접 보강",
-    description:
-      "저장한 장소는 localStorage에 보관하고, 카테고리와 상세 정보를 직접 수정할 수 있습니다.",
-  },
+const exampleJson = JSON.stringify(
+  [
+    {
+      name: "이치란 본점",
+      address: "일본 후쿠오카",
+      latitude: 33.591,
+      longitude: 130.401,
+      note: "라멘 맛집",
+    },
+  ],
+  null,
+  2,
+);
+
+const importFlowSteps = [
+  "Google Maps 또는 Google Takeout에서 장소 데이터 준비",
+  "JSON 파일 업로드 또는 붙여넣기",
+  "미리보기 확인",
+  "가져온 장소 저장",
+  "카테고리와 상세정보 수정",
 ];
 
 const categoryOptions: Array<{ value: PlaceCategory; label: string }> = [
@@ -71,7 +75,7 @@ const detailTextFields: Array<{
     placeholder: "개인 메모나 방문 팁",
     multiline: true,
   },
-  { key: "priceRange", label: "가격대", placeholder: "예: ₩10,000~₩20,000" },
+  { key: "priceRange", label: "가격대", placeholder: "예: 1,000엔~2,000엔" },
   { key: "openingHours", label: "영업시간", placeholder: "예: 10:00~21:00" },
   { key: "phone", label: "전화번호", placeholder: "예: +81-92-000-0000" },
   { key: "website", label: "웹사이트", placeholder: "https://example.com" },
@@ -144,6 +148,14 @@ export default function ImportScreen({ onBack }: ImportScreenProps) {
     setSaveResult(null);
   };
 
+  const handleUseExampleJson = () => {
+    setJsonInput(exampleJson);
+    setSelectedJsonFileName("");
+    setPreviewPlaces([]);
+    setSaveResult(null);
+    setMessage("예시 JSON을 입력했습니다. 가져오기 미리보기를 눌러 확인해 주세요.");
+  };
+
   const handleJsonFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
 
@@ -155,7 +167,7 @@ export default function ImportScreen({ onBack }: ImportScreenProps) {
       setSelectedJsonFileName("");
       setPreviewPlaces([]);
       setSaveResult(null);
-      setMessage(".json 파일을 선택해 주세요.");
+      setMessage(".json 파일만 업로드할 수 있습니다. JSON 파일을 다시 선택해 주세요.");
       return;
     }
 
@@ -166,7 +178,7 @@ export default function ImportScreen({ onBack }: ImportScreenProps) {
         setSelectedJsonFileName("");
         setPreviewPlaces([]);
         setSaveResult(null);
-        setMessage("JSON 파일을 읽지 못했습니다. 파일 내용을 확인해 주세요.");
+        setMessage("파일 내용을 읽지 못했습니다. JSON 텍스트가 들어 있는 파일인지 확인해 주세요.");
         return;
       }
 
@@ -174,16 +186,14 @@ export default function ImportScreen({ onBack }: ImportScreenProps) {
       setSelectedJsonFileName(file.name);
       setPreviewPlaces([]);
       setSaveResult(null);
-      setMessage(
-        "JSON 파일을 읽었습니다. 가져오기 미리보기를 실행해 주세요.",
-      );
+      setMessage("JSON 파일을 읽었습니다. 가져오기 미리보기를 실행해 주세요.");
     };
 
     reader.onerror = () => {
       setSelectedJsonFileName("");
       setPreviewPlaces([]);
       setSaveResult(null);
-      setMessage("JSON 파일 읽기에 실패했습니다. 다른 파일을 선택해 주세요.");
+      setMessage("JSON 파일 읽기에 실패했습니다. 파일을 다시 선택하거나 내용을 직접 붙여넣어 주세요.");
     };
 
     reader.readAsText(file);
@@ -191,29 +201,43 @@ export default function ImportScreen({ onBack }: ImportScreenProps) {
 
   const handlePreviewImport = () => {
     try {
-      const places = parseGoogleMapsPlaces(jsonInput);
-      setPreviewPlaces(places);
+      const result = parseGoogleMapsPlacesWithReport(jsonInput);
+      setPreviewPlaces(result.places);
       setSaveResult(null);
 
       if (!jsonInput.trim()) {
-        setMessage("JSON 데이터를 붙여넣거나 업로드한 뒤 미리보기를 실행해 주세요.");
+        setMessage("먼저 JSON 파일을 업로드하거나 textarea에 JSON을 붙여넣어 주세요.");
         return;
       }
 
-      if (places.length === 0) {
+      if (result.candidateCount === 0) {
         setMessage(
-          "가져올 수 있는 장소가 없습니다. 좌표(lat/lng 또는 latitude/longitude)가 없는 데이터는 제외됩니다.",
+          "장소 배열을 찾지 못했습니다. 예시처럼 [{ name, latitude, longitude }] 형태이거나 places/items 배열을 가진 JSON인지 확인해 주세요.",
         );
         return;
       }
 
+      if (result.places.length === 0) {
+        setMessage(
+          `총 ${result.candidateCount}개 항목을 읽었지만 좌표가 없어 모두 제외되었습니다. latitude/longitude 또는 lat/lng 값을 넣어 주세요.`,
+        );
+        return;
+      }
+
+      const excludedMessage =
+        result.excludedWithoutCoordinatesCount > 0
+          ? ` 좌표가 없는 ${result.excludedWithoutCoordinatesCount}개 항목은 제외했습니다.`
+          : "";
+
       setMessage(
-        `${places.length}개 장소를 미리보기로 변환했습니다. 좌표가 없는 항목은 제외됩니다.`,
+        `${result.places.length}개 장소를 미리보기로 변환했습니다.${excludedMessage}`,
       );
     } catch {
       setPreviewPlaces([]);
       setSaveResult(null);
-      setMessage("JSON 파싱에 실패했습니다. 형식이 올바른지 확인해 주세요.");
+      setMessage(
+        "JSON 파싱에 실패했습니다. 쉼표, 따옴표, 대괄호가 올바른지 확인하거나 예시 JSON을 넣어 형식을 비교해 주세요.",
+      );
     }
   };
 
@@ -273,8 +297,8 @@ export default function ImportScreen({ onBack }: ImportScreenProps) {
   };
 
   return (
-    <section className="pb-[var(--app-screen-bottom-space)]">
-      <div className="mb-6">
+    <section className="space-y-4 pb-[var(--app-screen-bottom-space)]">
+      <div>
         <button
           type="button"
           onClick={onBack}
@@ -282,53 +306,60 @@ export default function ImportScreen({ onBack }: ImportScreenProps) {
         >
           설정으로 돌아가기
         </button>
-        <p className="text-sm font-semibold text-zinc-500">
-          Google Maps 가져오기
-        </p>
-        <h1 className="mt-2 text-2xl font-bold tracking-normal text-black">
-          저장한 장소 미리보기
+        <h1 className="text-2xl font-bold tracking-normal text-black">
+          Google Maps 장소 가져오기
         </h1>
         <p className="mt-2 text-sm leading-6 text-zinc-500">
-          Google API나 외부 서비스를 연결하지 않고, 붙여넣거나 업로드한 JSON을
-          TravelMate 장소 데이터 형식으로 변환해 확인합니다.
+          OAuth나 외부 API 없이 브라우저에서 JSON 파일을 읽거나 붙여넣어 TravelMate 장소로 저장합니다.
         </p>
       </div>
 
-      <div className="rounded-3xl border border-zinc-100 bg-white p-5 shadow-lg shadow-zinc-100">
-        <div className="flex h-14 w-14 items-center justify-center rounded-3xl bg-blue-50 text-3xl">
-          🗺️
-        </div>
-        <h2 className="mt-4 text-xl font-bold tracking-normal text-black">
-          가져오기 흐름
+      <section className="rounded-3xl border border-zinc-100 bg-white p-5 shadow-lg shadow-zinc-100">
+        <p className="text-sm font-semibold text-blue-600">테스트 흐름</p>
+        <h2 className="mt-2 text-lg font-bold tracking-normal text-black">
+          Google Maps 장소 가져오기
         </h2>
-
-        <div className="mt-5 space-y-4">
-          {importSteps.map((step, index) => (
-            <div key={step.title}>
-              <div className="rounded-2xl bg-zinc-50 p-4">
-                <p className="font-semibold text-black">{step.title}</p>
-                <p className="mt-2 text-sm leading-6 text-zinc-500">
-                  {step.description}
-                </p>
-              </div>
-              {index < importSteps.length - 1 && (
-                <div className="flex justify-center py-2 text-xl text-zinc-300">
-                  ↓
-                </div>
-              )}
-            </div>
+        <ol className="mt-4 space-y-2 text-sm leading-6 text-zinc-600">
+          {importFlowSteps.map((step, index) => (
+            <li key={step} className="flex gap-3">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-xs font-bold text-zinc-700">
+                {index + 1}
+              </span>
+              <span>{step}</span>
+            </li>
           ))}
-        </div>
-      </div>
+        </ol>
+      </section>
 
-      <div className="mt-5 rounded-3xl border border-zinc-100 bg-white p-5 shadow-lg shadow-zinc-100">
-        <label
-          htmlFor="google-maps-json"
-          className="text-sm font-semibold text-zinc-700"
-        >
-          Google Maps JSON
-        </label>
-        <div className="mt-3 rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 p-4">
+      <section className="rounded-3xl border border-zinc-100 bg-white p-5 shadow-lg shadow-zinc-100">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-bold tracking-normal text-black">
+              JSON 입력
+            </h2>
+            <p className="mt-1 text-sm leading-6 text-zinc-500">
+              name/title과 latitude/longitude 또는 lat/lng가 있으면 가져올 수 있습니다.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleUseExampleJson}
+            className="shrink-0 rounded-2xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white"
+          >
+            예시 JSON 넣기
+          </button>
+        </div>
+
+        <details className="mt-4 rounded-2xl bg-zinc-50 p-4">
+          <summary className="cursor-pointer text-sm font-semibold text-zinc-700">
+            테스트용 예시 JSON 보기
+          </summary>
+          <pre className="mt-3 max-h-56 overflow-auto whitespace-pre-wrap rounded-xl bg-white p-3 text-xs leading-5 text-zinc-700 ring-1 ring-zinc-100">
+            {exampleJson}
+          </pre>
+        </details>
+
+        <div className="mt-4 rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 p-4">
           <label
             htmlFor="google-maps-json-file"
             className="block text-sm font-semibold text-zinc-700"
@@ -348,21 +379,19 @@ export default function ImportScreen({ onBack }: ImportScreenProps) {
             </p>
           )}
         </div>
-        <textarea
-          id="google-maps-json"
-          value={jsonInput}
-          onChange={(event) => handleJsonInputChange(event.target.value)}
-          placeholder={`[
-  {
-    "name": "Ohori Park",
-    "address": "Fukuoka",
-    "lat": 33.5868,
-    "lng": 130.3762,
-    "note": "산책하기 좋은 공원"
-  }
-]`}
-          className="mt-3 min-h-56 w-full resize-y rounded-2xl border border-zinc-200 bg-zinc-50 p-4 font-mono text-sm leading-6 text-zinc-800 outline-none focus:border-blue-300 focus:bg-white"
-        />
+
+        <label htmlFor="google-maps-json" className="mt-4 block">
+          <span className="text-sm font-semibold text-zinc-700">
+            JSON 붙여넣기
+          </span>
+          <textarea
+            id="google-maps-json"
+            value={jsonInput}
+            onChange={(event) => handleJsonInputChange(event.target.value)}
+            placeholder={exampleJson}
+            className="mt-2 min-h-52 w-full resize-y rounded-2xl border border-zinc-200 bg-zinc-50 p-4 font-mono text-sm leading-6 text-zinc-800 outline-none focus:border-blue-300 focus:bg-white"
+          />
+        </label>
 
         <button
           type="button"
@@ -391,15 +420,14 @@ export default function ImportScreen({ onBack }: ImportScreenProps) {
             저장된 가져오기 장소: {importedPlaces.length}개
           </p>
         )}
-      </div>
+      </section>
 
       {previewPlaces.length > 0 && (
-        <div className="mt-5 rounded-3xl border border-zinc-100 bg-white p-5 shadow-lg shadow-zinc-100">
+        <section className="rounded-3xl border border-zinc-100 bg-white p-5 shadow-lg shadow-zinc-100">
           <h2 className="text-lg font-bold tracking-normal text-black">
             가져오기 미리보기
           </h2>
-
-          <div className="mt-4 space-y-3">
+          <div className="mt-4 max-h-80 space-y-3 overflow-auto pr-1">
             {previewPlaces.map((place) => (
               <div
                 key={place.id}
@@ -415,7 +443,6 @@ export default function ImportScreen({ onBack }: ImportScreenProps) {
               </div>
             ))}
           </div>
-
           <button
             type="button"
             onClick={handleSaveImportedPlaces}
@@ -423,16 +450,16 @@ export default function ImportScreen({ onBack }: ImportScreenProps) {
           >
             가져온 장소 저장
           </button>
-        </div>
+        </section>
       )}
 
       {importedPlaces.length > 0 && (
-        <div className="mt-5 rounded-3xl border border-zinc-100 bg-white p-5 shadow-lg shadow-zinc-100">
+        <section className="rounded-3xl border border-zinc-100 bg-white p-5 shadow-lg shadow-zinc-100">
           <h2 className="text-lg font-bold tracking-normal text-black">
             저장된 가져온 장소
           </h2>
           <p className="mt-1 text-sm leading-6 text-zinc-500">
-            카테고리와 상세 정보를 바꾸면 장소 목록, 내 주변, 홈 추천과 상세 모달에 바로 반영됩니다.
+            카테고리와 상세정보를 바꾸면 장소 목록, 내 주변, 홈 추천과 상세 모달에 바로 반영됩니다.
           </p>
 
           <div className="mt-4 space-y-3">
@@ -550,10 +577,10 @@ export default function ImportScreen({ onBack }: ImportScreenProps) {
               );
             })}
           </div>
-        </div>
+        </section>
       )}
 
-      <div className="mt-5 rounded-3xl border border-dashed border-zinc-200 bg-zinc-50 p-5">
+      <section className="rounded-3xl border border-dashed border-zinc-200 bg-zinc-50 p-5">
         <p className="text-sm font-semibold text-zinc-500">아직 하지 않는 일</p>
         <div className="mt-3 space-y-2 text-sm leading-6 text-zinc-600">
           <p>Google OAuth 연결</p>
@@ -569,7 +596,7 @@ export default function ImportScreen({ onBack }: ImportScreenProps) {
         >
           가져온 장소 삭제
         </button>
-      </div>
+      </section>
     </section>
   );
 }

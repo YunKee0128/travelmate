@@ -13,15 +13,32 @@ export type ImportedGooglePlace = {
   [key: string]: unknown;
 };
 
+export type GoogleMapsParseResult = {
+  places: Place[];
+  candidateCount: number;
+  excludedWithoutCoordinatesCount: number;
+};
+
 const IMPORT_TAGS = ["Google Maps", "가져온 장소"];
 
 export function parseGoogleMapsPlaces(input: unknown): Place[] {
+  return parseGoogleMapsPlacesWithReport(input).places;
+}
+
+export function parseGoogleMapsPlacesWithReport(
+  input: unknown,
+): GoogleMapsParseResult {
   const parsedInput = parseInput(input);
   const candidates = extractCandidates(parsedInput);
-
-  return candidates
+  const places = candidates
     .map((candidate, index) => toPlace(candidate, index))
     .filter((place): place is Place => place !== null);
+
+  return {
+    places,
+    candidateCount: candidates.length,
+    excludedWithoutCoordinatesCount: candidates.length - places.length,
+  };
 }
 
 function parseInput(input: unknown): unknown {
